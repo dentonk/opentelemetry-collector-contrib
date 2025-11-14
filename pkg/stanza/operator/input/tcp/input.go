@@ -149,7 +149,14 @@ func (i *Input) goHandleMessages(ctx context.Context, conn net.Conn, cancel cont
 		scanner.Split(i.splitFunc)
 
 		for scanner.Scan() {
-			i.handleMessage(ctx, conn, dec, scanner.Bytes())
+			// Copy the bytes to avoid retaining a reference to the scanner's internal buffer.
+			// scanner.Bytes() returns a slice that references the scanner's buffer, which can
+			// be up to MaxLogSize bytes. If entries are batched or queued and retain references
+			// to this data, the entire scanner buffer cannot be garbage collected, leading to
+			// memory leaks when processing many connections.
+			bytesCopy := make([]byte, len(scanner.Bytes()))
+			copy(bytesCopy, scanner.Bytes())
+			i.handleMessage(ctx, conn, dec, bytesCopy)
 		}
 
 		if err := scanner.Err(); err != nil {
